@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Format table and conversion backend for the "Convert to" file menu.
+"""Formshift: format table and conversion backend for the "Convert to" menu.
 
 The platform integrations (Nautilus, Windows Explorer, macOS Finder) import
 this to decide which formats to offer, and run it as a separate process to do
@@ -232,7 +232,7 @@ $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
 $xml.LoadXml('{xml}')
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 $toast.Tag = '{tag}'
-$toast.Group = 'FileConverter'
+$toast.Group = 'Formshift'
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{app}').Show($toast)
 """
 # Windows only shows toasts from registered apps; PowerShell is always registered.
@@ -258,7 +258,7 @@ class Notifier:
                 self._windows(summary, body, silent=throttle, wait=final)
             elif MACOS:
                 script = (f"display notification {applescript_string(body)} "
-                          f"with title \"File Converter\" "
+                          f"with title \"Formshift\" "
                           f"subtitle {applescript_string(summary)}")
                 subprocess.run(["osascript", "-e", script], capture_output=True)
             else:
@@ -267,7 +267,7 @@ class Notifier:
             pass
 
     def _linux(self, summary, body, urgency):
-        cmd = ["notify-send", "--app-name=File Converter", "--print-id",
+        cmd = ["notify-send", "--app-name=Formshift", "--print-id",
                "--icon=document-save-as", f"--urgency={urgency}"]
         if self.id:
             cmd.append(f"--replace-id={self.id}")
@@ -356,7 +356,7 @@ def convert_media(src, dst, ext, progress):
 
 
 def convert_office(src, dst, ext, progress):
-    with tempfile.TemporaryDirectory(prefix="fileconv-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="formshift-") as tmp:
         # A private profile lets headless LibreOffice run while the user has it open.
         profile = pathlib.Path(tmp, "profile").as_uri()
         outdir = os.path.join(tmp, "out")

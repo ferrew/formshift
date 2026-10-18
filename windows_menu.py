@@ -13,9 +13,9 @@ import sys
 
 import converter
 
-APP_DIR = os.path.join(os.environ.get("LOCALAPPDATA", ""), "FileConverter")
+APP_DIR = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Formshift")
 CLASSES = r"Software\Classes\SystemFileAssociations"
-VERB = "FileConverter"
+VERB = "Formshift"
 
 
 def menu_entries():

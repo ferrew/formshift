@@ -1,4 +1,4 @@
-# File Converter
+# Formshift
 
 Adds **Convert to** to the right-click menu of your file manager: GNOME Files
 (Nautilus) on Linux, Explorer on Windows and Finder on macOS. Pick a format and
@@ -38,8 +38,8 @@ The install scripts add whichever of these are missing.
 Tested on Ubuntu 26.04 with Nautilus 50.
 
 ```bash
-git clone https://github.com/ferrew/nautilus-file-converter.git
-cd nautilus-file-converter
+git clone https://github.com/ferrew/formshift.git
+cd formshift
 ./install.sh
 ```
 
@@ -50,8 +50,8 @@ Missing packages are installed with `apt`, which asks for your password.
 In PowerShell:
 
 ```powershell
-git clone https://github.com/ferrew/nautilus-file-converter.git
-cd nautilus-file-converter
+git clone https://github.com/ferrew/formshift.git
+cd formshift
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
@@ -67,8 +67,8 @@ file and hides the menu when more than 15 files are selected.
 Needs [Homebrew](https://brew.sh).
 
 ```bash
-git clone https://github.com/ferrew/nautilus-file-converter.git
-cd nautilus-file-converter
+git clone https://github.com/ferrew/formshift.git
+cd formshift
 ./install.sh
 ```
 
@@ -93,7 +93,7 @@ python3 converter.py --to webp *.png
 
 - `converter.py` holds the format table and does the conversions. It is the only
   part shared by all platforms.
-- `file_converter_menu.py` is the Nautilus extension.
+- `nautilus_menu.py` is the Nautilus extension.
 - `windows_menu.py` writes the Explorer submenu to the registry under
   `HKEY_CURRENT_USER`.
 - `macos_menu.py` generates the Finder Quick Action in `~/Library/Services`.

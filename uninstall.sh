@@ -7,7 +7,7 @@ if [[ "$(uname -s)" == Darwin ]]; then
     exit
 fi
 
-rm -f "$HOME/.local/share/nautilus-python/extensions/file_converter_menu.py"
-rm -rf "$HOME/.local/share/nautilus-file-converter"
+rm -f "$HOME/.local/share/nautilus-python/extensions/formshift.py"
+rm -rf "$HOME/.local/share/formshift"
 nautilus -q 2>/dev/null || true
 echo "Removed."

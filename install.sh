@@ -25,7 +25,7 @@ install_macos() {
 }
 
 install_linux() {
-    local backend="$HOME/.local/share/nautilus-file-converter"
+    local backend="$HOME/.local/share/formshift"
     local extensions="$HOME/.local/share/nautilus-python/extensions"
 
     # command -> package that provides it
@@ -45,8 +45,10 @@ install_linux() {
 
     mkdir -p "$backend" "$extensions"
     install -m 755 "$here/converter.py" "$backend/converter.py"
-    install -m 644 "$here/file_converter_menu.py" "$extensions/file_converter_menu.py"
-    rm -rf "$extensions/__pycache__"
+    install -m 644 "$here/nautilus_menu.py" "$extensions/formshift.py"
+    # Clean up installs from before the rename.
+    rm -rf "$extensions/file_converter_menu.py" "$extensions/__pycache__" \
+        "$HOME/.local/share/nautilus-file-converter"
 
     nautilus -q 2>/dev/null || true
     echo "Installed. Open Files and right-click a file to see \"Convert to\"."

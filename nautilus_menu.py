@@ -18,12 +18,12 @@ for _version in ("4.1", "4.0"):  # Nautilus 50 ships 4.1, older releases 4.0
         pass
 from gi.repository import GObject, Nautilus  # noqa: E402
 
-BACKEND_DIR = os.path.expanduser("~/.local/share/nautilus-file-converter")
+BACKEND_DIR = os.path.expanduser("~/.local/share/formshift")
 sys.path.insert(0, BACKEND_DIR)
 import converter  # noqa: E402
 
 
-class FileConverterMenu(GObject.GObject, Nautilus.MenuProvider):
+class FormshiftMenu(GObject.GObject, Nautilus.MenuProvider):
     def get_file_items(self, files):
         selected = []
         for f in files:
@@ -38,12 +38,12 @@ class FileConverterMenu(GObject.GObject, Nautilus.MenuProvider):
         if not targets:
             return []
 
-        top = Nautilus.MenuItem(name="FileConverter::Top", label="Convert to")
+        top = Nautilus.MenuItem(name="Formshift::Top", label="Convert to")
         submenu = Nautilus.Menu()
         top.set_submenu(submenu)
         paths = [path for path, _ in selected]
         for ext, label in targets:
-            item = Nautilus.MenuItem(name=f"FileConverter::{ext}", label=label)
+            item = Nautilus.MenuItem(name=f"Formshift::{ext}", label=label)
             item.connect("activate", self._convert, ext, paths)
             submenu.append_item(item)
         return [top]

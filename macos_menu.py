@@ -15,7 +15,7 @@ import subprocess
 import sys
 import uuid
 
-APP_DIR = os.path.expanduser("~/Library/Application Support/FileConverter")
+APP_DIR = os.path.expanduser("~/Library/Application Support/Formshift")
 WORKFLOW = os.path.expanduser("~/Library/Services/Convert to….workflow")
 FINDER = "/System/Library/CoreServices/Finder.app"
 SHELL_ACTION = "/System/Library/Automator/Run Shell Script.action"
