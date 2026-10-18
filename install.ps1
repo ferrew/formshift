@@ -11,9 +11,32 @@ function Find-Python {
     return $null
 }
 
+function Find-Winget {
+    $cmd = Get-Command winget -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $alias = "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe"
+    if (Test-Path $alias) { return $alias }
+    return $null
+}
+
+$winget = Find-Winget
+if (-not $winget) {
+    # winget ships with "App Installer", which is often present but not yet
+    # registered for a new user account.
+    Write-Host "winget not found, trying to register App Installer"
+    try {
+        Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
+    } catch { }
+    $winget = Find-Winget
+}
+
 function Install-Package($id) {
+    if (-not $script:winget) {
+        throw "$id is needed, but winget is not available to install it. Install App Installer from the Microsoft Store (https://apps.microsoft.com/detail/9NBLGGH4NX0P), open a new PowerShell window and run this script again."
+    }
     Write-Host "Installing $id"
-    winget install --id $id -e --accept-package-agreements --accept-source-agreements
+    & $script:winget install --id $id -e --accept-package-agreements --accept-source-agreements
+    if ($LASTEXITCODE -ne 0) { Write-Warning "winget could not install $id (exit code $LASTEXITCODE)" }
 }
 
 if (-not (Find-Python)) { Install-Package "Python.Python.3.13" }

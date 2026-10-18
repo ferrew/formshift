@@ -55,7 +55,9 @@ cd formshift
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-Missing tools are installed with `winget`. The menu is registered for your user
+Missing tools are installed with `winget`. If winget is missing too, install
+[App Installer](https://apps.microsoft.com/detail/9NBLGGH4NX0P) from the
+Microsoft Store first. The menu is registered for your user
 only, so no administrator rights are needed for that part.
 
 On Windows 11, **Convert to** is in the classic menu: right-click, then
