@@ -63,6 +63,9 @@ script downloads a private copy of Python and the tools and unpacks them into
 `%LOCALAPPDATA%\Formshift`; the menu is registered for your user only. Tools that
 are already on your `PATH` are reused instead of downloaded.
 
+Before downloading, the script lists the tools with their licenses and asks
+once whether you accept them (`-Yes` accepts without asking).
+
 LibreOffice is about 350 MB and only needed for office documents. To skip it:
 
 ```powershell
@@ -80,7 +83,8 @@ file and hides the menu when more than 15 files are selected.
 
 Needs [Homebrew](https://brew.sh). ffmpeg, ImageMagick and Poppler come from
 Homebrew; LibreOffice is copied into `~/Library/Application Support/Formshift`
-rather than `/Applications`.
+rather than `/Applications`, after asking you to accept its license
+(set `FORMSHIFT_YES=1` to skip the question).
 
 ```bash
 git clone https://github.com/ferrew/formshift.git

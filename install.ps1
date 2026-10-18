@@ -4,8 +4,9 @@
 # Nothing is installed system-wide: Python and the conversion tools are
 # downloaded and unpacked into %LOCALAPPDATA%\Formshift, without installers,
 # admin rights or Start menu entries. Add -NoDocuments to skip LibreOffice
-# (about 350 MB), which is only needed for office documents.
-param([switch]$NoDocuments)
+# (about 350 MB), which is only needed for office documents. It asks once to
+# accept the tools' licenses; -Yes accepts without asking.
+param([switch]$NoDocuments, [switch]$Yes)
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"  # the progress bar slows downloads to a crawl in PowerShell 5
@@ -53,30 +54,55 @@ function Test-Tool($cmd, $privatePath) {
     return (Test-Path $privatePath) -or [bool](Get-Command $cmd -ErrorAction SilentlyContinue)
 }
 
-# Python, always a private copy so the system Python (if any) doesn't matter.
-if (-not (Test-Path "$tools\python\pythonw.exe")) {
+$needPython = -not (Test-Path "$tools\python\pythonw.exe")  # always private, the system Python doesn't matter
+$needFfmpeg = -not (Test-Tool "ffmpeg" "$tools\ffmpeg\bin\ffmpeg.exe")
+$needMagick = -not (Test-Tool "magick" "$tools\imagemagick\magick.exe")
+$needPoppler = -not (Test-Tool "pdftoppm" "$tools\poppler\Library\bin\pdftoppm.exe")
+$needOffice = -not $NoDocuments -and -not (
+    (Test-Path "$env:ProgramFiles\LibreOffice\program\soffice.exe") -or (Test-Path "$tools\libreoffice"))
+
+$downloads = @(
+    @($needPython, "Python", "PSF License", "https://docs.python.org/3/license.html"),
+    @($needFfmpeg, "FFmpeg", "GPL-3.0", "https://ffmpeg.org/legal.html"),
+    @($needMagick, "ImageMagick", "ImageMagick License", "https://imagemagick.org/script/license.php"),
+    @($needMagick, "7-Zip (7zr, to unpack ImageMagick)", "LGPL-2.1", "https://www.7-zip.org/license.txt"),
+    @($needPoppler, "Poppler", "GPL-2.0", "https://poppler.freedesktop.org"),
+    @($needOffice, "LibreOffice (about 350 MB)", "MPL-2.0", "https://www.libreoffice.org/about-us/licenses/")
+) | Where-Object { $_[0] } | ForEach-Object {
+    [pscustomobject]@{ Tool = $_[1]; License = $_[2]; Terms = $_[3] }
+}
+
+if ($downloads) {
+    Write-Host "Formshift will download these tools into $tools`:"
+    $downloads | Format-Table -AutoSize | Out-Host
+    Write-Host "By continuing you accept their license terms (links above)."
+    if (-not $Yes) {
+        $answer = Read-Host "Continue? [y/N]"
+        if ($answer -notmatch '^(y|yes|j|ja)$') { Write-Host "Cancelled, nothing was downloaded."; exit 1 }
+    }
+}
+
+if ($needPython) {
     $zip = Get-File "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip" "python.zip"
     Expand-Into $zip "$tools\python"
 }
 
-if (-not (Test-Tool "ffmpeg" "$tools\ffmpeg\bin\ffmpeg.exe")) {
+if ($needFfmpeg) {
     $zip = Get-File "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" "ffmpeg.zip"
     Expand-Into $zip "$tools\ffmpeg"
 }
 
-if (-not (Test-Tool "magick" "$tools\imagemagick\magick.exe")) {
+if ($needMagick) {
     $archive = Get-GitHubAsset "ImageMagick/ImageMagick" "ImageMagick-*-portable-Q16-x64.7z"
     Expand-Into $archive "$tools\imagemagick"
 }
 
-if (-not (Test-Tool "pdftoppm" "$tools\poppler\Library\bin\pdftoppm.exe")) {
+if ($needPoppler) {
     $zip = Get-GitHubAsset "oschwartz10612/poppler-windows" "Release-*.zip"
     Expand-Into $zip "$tools\poppler"
 }
 
-$officeInstalled = (Test-Path "$env:ProgramFiles\LibreOffice\program\soffice.exe") -or
-                   (Test-Path "$tools\libreoffice")
-if (-not $NoDocuments -and -not $officeInstalled) {
+if ($needOffice) {
     $index = (Invoke-WebRequest "https://download.documentfoundation.org/libreoffice/stable/" -UseBasicParsing).Content
     $version = [regex]::Matches($index, 'href="(\d+(?:\.\d+)+)/"') |
         ForEach-Object { $_.Groups[1].Value } | Sort-Object { [version]$_ } | Select-Object -Last 1

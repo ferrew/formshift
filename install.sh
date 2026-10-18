@@ -15,6 +15,15 @@ install_libreoffice_macos() {
     version=$(curl -fsSL "$base/" | grep -oE 'href="[0-9.]+/"' | grep -oE '[0-9]+(\.[0-9]+)+' |
         sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
     if [[ "$(uname -m)" == arm64 ]]; then dir=aarch64 arch=aarch64; else dir=x86_64 arch=x86-64; fi
+    echo "Formshift will download LibreOffice $version (about 350 MB) into $tools."
+    echo "By continuing you accept its license (MPL-2.0): https://www.libreoffice.org/about-us/licenses/"
+    if [[ "${FORMSHIFT_YES:-}" != 1 ]]; then
+        read -r -p "Continue? [y/N] " answer
+        if [[ ! "$answer" =~ ^([yYjJ]|yes|ja)$ ]]; then
+            echo "Skipped LibreOffice; office documents won't be offered."
+            return
+        fi
+    fi
     dmg="$(mktemp -d)/libreoffice.dmg"
     mnt="$(mktemp -d)"
     echo "Downloading LibreOffice $version"
