@@ -10,7 +10,12 @@ import sys
 
 import gi
 
-gi.require_version("Nautilus", "4.0")
+for _version in ("4.1", "4.0"):  # Nautilus 50 ships 4.1, older releases 4.0
+    try:
+        gi.require_version("Nautilus", _version)
+        break
+    except ValueError:
+        pass
 from gi.repository import GObject, Nautilus  # noqa: E402
 
 BACKEND_DIR = os.path.expanduser("~/.local/share/nautilus-file-converter")
