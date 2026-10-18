@@ -1,24 +1,35 @@
 #!/usr/bin/env python3
-"""Format table and conversion backend for the Nautilus "Convert to" menu.
+"""Format table and conversion backend for the "Convert to" file menu.
 
-Imported by the Nautilus extension to decide which formats to offer, and run
-as a separate process to do the actual conversion so Nautilus never blocks:
+The platform integrations (Nautilus, Windows Explorer, macOS Finder) import
+this to decide which formats to offer, and run it as a separate process to do
+the conversion so the file manager never blocks:
 
     converter.py --to png photo.heic scan.tiff
+    converter.py --choose clip.mov        # ask for the format in a dialog (macOS)
 """
 
 import argparse
+import base64
+import glob
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 
-import gi
+try:
+    import gi
 
-gi.require_version("Gio", "2.0")
-from gi.repository import Gio  # noqa: E402
+    gi.require_version("Gio", "2.0")
+    from gi.repository import Gio
+except (ImportError, ValueError):
+    Gio = None
+
+WINDOWS = sys.platform == "win32"
+MACOS = sys.platform == "darwin"
 
 # Target formats per category, in menu order: (extension, menu label).
 TARGETS = {
@@ -54,6 +65,21 @@ TARGETS = {
     ],
 }
 
+# Source file extensions per category. Windows and macOS menus are registered
+# per extension; Linux falls back to the MIME type for anything not listed.
+EXTENSIONS = {
+    "image": "png jpg jpeg webp avif gif tif tiff bmp ico heic heif svg",
+    "video": "mp4 m4v mkv webm mov avi wmv flv mpg mpeg 3gp",
+    "audio": "mp3 m4a aac ogg oga opus flac wav wma aif aiff",
+    "document": "docx doc odt rtf txt md html htm",
+    "spreadsheet": "xlsx xls ods csv",
+    "presentation": "pptx ppt odp",
+    "pdf": "pdf",
+}
+EXTENSION_CATEGORY = {
+    ext: cat for cat, exts in EXTENSIONS.items() for ext in exts.split()
+}
+
 DOCUMENT_MIMES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/msword",
@@ -83,7 +109,26 @@ OFFICE_FILTERS = {
     "html": "html",
 }
 
-EXTENSION_ALIASES = {"jpeg": "jpg", "tif": "tiff", "htm": "html", "mpeg4": "mp4"}
+EXTENSION_ALIASES = {"jpeg": "jpg", "tif": "tiff", "htm": "html", "aiff": "aif"}
+
+# Where tools live when they are not on PATH, which is common for programs
+# started from Finder or Explorer.
+EXTRA_TOOL_DIRS = {
+    "darwin": [
+        "/opt/homebrew/bin", "/usr/local/bin",
+        "/Applications/LibreOffice.app/Contents/MacOS",
+    ],
+    "win32": [
+        os.path.expandvars(r"%ProgramFiles%\LibreOffice\program"),
+        os.path.expandvars(r"%ProgramFiles%\ImageMagick-*"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Links"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\*\*\bin"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\*\*\Library\bin"),
+    ],
+}
+
+# Keep console windows from flashing up for every tool on Windows.
+NO_WINDOW = {"creationflags": 0x08000000} if WINDOWS else {}
 
 
 def category(mime):
@@ -106,33 +151,44 @@ def extension_of(path):
     return EXTENSION_ALIASES.get(ext, ext)
 
 
+def category_of(path, mime=None):
+    ext = os.path.splitext(path)[1].lstrip(".").lower()
+    if ext in EXTENSION_CATEGORY:
+        return EXTENSION_CATEGORY[ext]
+    if mime is None and Gio is not None and os.path.exists(path):
+        mime = Gio.File.new_for_path(path).query_info(
+            "standard::content-type", Gio.FileQueryInfoFlags.NONE, None
+        ).get_content_type()
+    return category(mime) if mime else None
+
+
 def targets_for(files):
-    """Formats every file in `files` (a list of (path, mime)) can become.
+    """Formats every file in `files` (a list of (path, mime or None)) can become.
 
     A format is hidden only when all files already have it.
     """
     common = None
-    for _, mime in files:
-        cat = category(mime)
+    for path, mime in files:
+        cat = category_of(path, mime)
         if cat is None:
             return []
-        formats = TARGETS[cat]
-        if common is None:
-            common = list(formats)
-        else:
-            keep = {ext for ext, _ in formats}
-            common = [(ext, label) for ext, label in common if ext in keep]
+        keep = {ext for ext, _ in TARGETS[cat]}
+        common = TARGETS[cat] if common is None else [t for t in common if t[0] in keep]
     if not common:
         return []
     exts = {extension_of(path) for path, _ in files}
     return [(ext, label) for ext, label in common if exts != {ext}]
 
 
-def mime_of(path):
-    info = Gio.File.new_for_path(path).query_info(
-        "standard::content-type", Gio.FileQueryInfoFlags.NONE, None
-    )
-    return info.get_content_type()
+def tool(name):
+    found = shutil.which(name)
+    if not found:
+        dirs = [d for pattern in EXTRA_TOOL_DIRS.get(sys.platform, [])
+                for d in glob.glob(pattern)]
+        found = shutil.which(name, path=os.pathsep.join(dirs))
+    if not found:
+        raise ConversionError(f"{name} is not installed")
+    return found
 
 
 def free_path(directory, stem, ext):
@@ -149,34 +205,87 @@ class ConversionError(Exception):
 
 
 def run(cmd, **kwargs):
-    proc = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+    cmd = [tool(cmd[0]), *cmd[1:]]
+    proc = subprocess.run(cmd, capture_output=True, text=True, **NO_WINDOW, **kwargs)
     if proc.returncode != 0:
         tail = (proc.stderr or proc.stdout).strip().splitlines()[-3:]
-        raise ConversionError("\n".join(tail) or f"{cmd[0]} failed")
+        raise ConversionError("\n".join(tail) or f"{os.path.basename(cmd[0])} failed")
     return proc
 
 
+# --- notifications ----------------------------------------------------------
+
+
+def applescript_string(text):
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def xml_escape(text):
+    return (text.replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+WINDOWS_TOAST = """
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null
+$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+$xml.LoadXml('{xml}')
+$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+$toast.Tag = '{tag}'
+$toast.Group = 'FileConverter'
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{app}').Show($toast)
+"""
+# Windows only shows toasts from registered apps; PowerShell is always registered.
+POWERSHELL_APP_ID = r"{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe"
+
+
 class Notifier:
-    """One desktop notification, updated in place."""
+    """One desktop notification, updated in place where the platform allows."""
 
     def __init__(self):
         self.id = None
         self.last_update = 0.0
 
-    def show(self, summary, body="", urgency="normal", throttle=False):
-        if throttle and time.monotonic() - self.last_update < 1.5:
-            return
+    def show(self, summary, body="", urgency="normal", throttle=False, final=False):
+        if throttle:
+            if MACOS:  # macOS can't replace a notification, so skip progress spam
+                return
+            if time.monotonic() - self.last_update < (4 if WINDOWS else 1.5):
+                return
         self.last_update = time.monotonic()
+        try:
+            if WINDOWS:
+                self._windows(summary, body, silent=throttle, wait=final)
+            elif MACOS:
+                script = (f"display notification {applescript_string(body)} "
+                          f"with title \"File Converter\" "
+                          f"subtitle {applescript_string(summary)}")
+                subprocess.run(["osascript", "-e", script], capture_output=True)
+            else:
+                self._linux(summary, body, urgency)
+        except (FileNotFoundError, OSError):
+            pass
+
+    def _linux(self, summary, body, urgency):
         cmd = ["notify-send", "--app-name=File Converter", "--print-id",
                "--icon=document-save-as", f"--urgency={urgency}"]
         if self.id:
             cmd.append(f"--replace-id={self.id}")
-        cmd += [summary, body]
-        try:
-            out = subprocess.run(cmd, capture_output=True, text=True).stdout.strip()
-            self.id = out or self.id
-        except FileNotFoundError:
-            pass
+        out = subprocess.run(cmd + [summary, body], capture_output=True, text=True)
+        self.id = out.stdout.strip() or self.id
+
+    def _windows(self, summary, body, silent, wait):
+        audio = '<audio silent="true"/>' if silent else ""
+        xml = ('<toast><visual><binding template="ToastGeneric">'
+               f"<text>{xml_escape(summary)}</text><text>{xml_escape(body)}</text>"
+               f"</binding></visual>{audio}</toast>")
+        script = WINDOWS_TOAST.format(xml=xml.replace("'", "''"),
+                                      tag=f"fc{os.getpid()}", app=POWERSHELL_APP_ID)
+        encoded = base64.b64encode(script.encode("utf-16-le")).decode()
+        cmd = ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
+        proc = subprocess.Popen(cmd, **NO_WINDOW)
+        if wait:
+            proc.wait()
 
 
 # --- converters -------------------------------------------------------------
@@ -218,9 +327,9 @@ VIDEO_ARGS = {
 
 def duration_us(src):
     proc = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+        [tool("ffprobe"), "-v", "error", "-show_entries", "format=duration",
          "-of", "default=nw=1:nk=1", src],
-        capture_output=True, text=True,
+        capture_output=True, text=True, **NO_WINDOW,
     )
     try:
         return float(proc.stdout.strip()) * 1_000_000
@@ -230,11 +339,12 @@ def duration_us(src):
 
 def convert_media(src, dst, ext, progress):
     total = duration_us(src)
-    cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", src,
+    cmd = [tool("ffmpeg"), "-hide_banner", "-nostdin", "-y", "-i", src,
            *VIDEO_ARGS[ext], "-progress", "pipe:1", "-nostats", dst]
     # stderr goes to a file so a chatty ffmpeg can never fill the pipe and stall.
     with tempfile.TemporaryFile("w+") as err:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=err, text=True)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=err, text=True,
+                                **NO_WINDOW)
         for line in proc.stdout:
             key, _, value = line.strip().partition("=")
             if key == "out_time_us" and total and value.isdigit():
@@ -248,7 +358,7 @@ def convert_media(src, dst, ext, progress):
 def convert_office(src, dst, ext, progress):
     with tempfile.TemporaryDirectory(prefix="fileconv-") as tmp:
         # A private profile lets headless LibreOffice run while the user has it open.
-        profile = Gio.File.new_for_path(os.path.join(tmp, "profile")).get_uri()
+        profile = pathlib.Path(tmp, "profile").as_uri()
         outdir = os.path.join(tmp, "out")
         run(["soffice", f"-env:UserInstallation={profile}", "--headless",
              "--convert-to", OFFICE_FILTERS.get(ext, ext), "--outdir", outdir, src])
@@ -267,12 +377,12 @@ def convert_pdf(src, dst, ext, progress):
         if line.startswith("Pages:"):
             pages = int(line.split()[1])
     fmt = "-png" if ext == "png" else "-jpeg"
-    if pages == 1:
-        run(["pdftoppm", fmt, "-r", "150", "-singlefile", src, dst[: -len(ext) - 1]])
-        return
-    # Several pages: write name-1.png, name-2.png, ... next to the final name.
     prefix = dst[: -len(ext) - 1]
-    run(["pdftoppm", fmt, "-r", "150", src, prefix])
+    if pages == 1:
+        run(["pdftoppm", fmt, "-r", "150", "-singlefile", src, prefix])
+    else:
+        # Several pages: pdftoppm writes name-1.png, name-2.png, ...
+        run(["pdftoppm", fmt, "-r", "150", src, prefix])
 
 
 CONVERTERS = {
@@ -288,7 +398,7 @@ CONVERTERS = {
 
 def convert(src, ext, progress=lambda fraction: None):
     """Convert one file; returns the output path."""
-    cat = category(mime_of(src))
+    cat = category_of(src)
     if cat is None or ext not in {e for e, _ in TARGETS[cat]}:
         raise ConversionError(f"Can't convert this file to {ext.upper()}")
     directory = os.path.dirname(os.path.abspath(src))
@@ -300,7 +410,7 @@ def convert(src, ext, progress=lambda fraction: None):
         CONVERTERS[cat](src, dst, ext, progress)
         return dst
 
-    # Write to a hidden temp name so a half-done file never looks finished.
+    # Write to a temp name first so a half-done file never looks finished.
     tmp = os.path.join(directory, f".{stem}.converting.{ext}")
     try:
         CONVERTERS[cat](src, tmp, ext, progress)
@@ -311,12 +421,33 @@ def convert(src, ext, progress=lambda fraction: None):
     return dst
 
 
+def choose_format(files):
+    """Ask which format to convert to (macOS Quick Action). None if cancelled."""
+    targets = targets_for([(f, None) for f in files])
+    if not targets:
+        subprocess.run(["osascript", "-e",
+                        'display alert "These files can\'t be converted together."'])
+        return None
+    labels = ", ".join(applescript_string(label) for _, label in targets)
+    script = (f"choose from list {{{labels}}} with title \"Convert to\" "
+              f"with prompt \"Convert {len(files)} file(s) to:\" "
+              f"default items {{{applescript_string(targets[0][1])}}}")
+    out = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    picked = out.stdout.strip()
+    return next((ext for ext, label in targets if label == picked), None)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--to", required=True, help="target extension, e.g. png")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--to", help="target extension, e.g. png")
+    group.add_argument("--choose", action="store_true",
+                       help="ask for the target format in a dialog (macOS)")
     parser.add_argument("files", nargs="+")
     args = parser.parse_args()
-    ext = args.to.lower()
+    ext = choose_format(args.files) if args.choose else args.to.lower()
+    if ext is None:
+        return 0
 
     notifier = Notifier()
     done, failed = [], []
@@ -334,15 +465,16 @@ def main():
             done.append(name)
         except (ConversionError, OSError) as exc:
             failed.append(f"{name}: {exc}")
-            print(f"{src}: {exc}", file=sys.stderr)
+            if sys.stderr:  # None under pythonw.exe
+                print(f"{src}: {exc}", file=sys.stderr)
 
     if failed:
         notifier.show(f"{len(failed)} of {len(args.files)} conversions failed",
-                      "\n".join(failed), urgency="critical")
+                      "\n".join(failed), urgency="critical", final=True)
     elif len(done) == 1:
-        notifier.show(f"Converted to {ext.upper()}", done[0])
+        notifier.show(f"Converted to {ext.upper()}", done[0], final=True)
     else:
-        notifier.show(f"Converted {len(done)} files to {ext.upper()}")
+        notifier.show(f"Converted {len(done)} files to {ext.upper()}", final=True)
     return 1 if failed else 0
 
 

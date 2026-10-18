@@ -1,9 +1,10 @@
-# nautilus-file-converter
+# File Converter
 
-Adds a **Convert to** submenu to the right-click menu in GNOME Files (Nautilus).
-Pick a format and the converted file appears next to the original.
+Adds **Convert to** to the right-click menu of your file manager: GNOME Files
+(Nautilus) on Linux, Explorer on Windows and Finder on macOS. Pick a format and
+the converted file appears next to the original.
 
-The menu only offers formats that fit the selection:
+Only formats that fit the selected file are offered:
 
 | Selected file | Can become |
 |---|---|
@@ -15,19 +16,24 @@ The menu only offers formats that fit the selection:
 | Presentation (pptx, ppt, odp) | PPTX, ODP, PDF |
 | PDF | PNG or JPEG (one image per page), TXT |
 
-When several files are selected, only formats that work for all of them are shown.
-
 ## Behaviour
 
 - Originals are never touched. If `photo.png` already exists, the output is `photo (2).png`.
-- Conversions run in a separate process, so Files stays responsive. A desktop
-  notification shows progress (with a percentage for audio and video) and the result.
-- Unfinished output is written to a hidden temporary file, so a failed or
-  interrupted conversion never leaves a broken file behind.
+- Conversions run in a separate process, so the file manager stays responsive.
+  A notification reports the result; on Linux and Windows it also shows progress
+  for audio and video.
+- Output is written to a temporary file first, so a failed or interrupted
+  conversion never leaves a broken file behind.
 - Office conversions use a private LibreOffice profile, so they work while
   LibreOffice is open.
 
 ## Install
+
+The conversions are done by [ffmpeg](https://ffmpeg.org), [ImageMagick](https://imagemagick.org),
+[LibreOffice](https://www.libreoffice.org) and [Poppler](https://poppler.freedesktop.org).
+The install scripts add whichever of these are missing.
+
+### Linux (Ubuntu, GNOME Files)
 
 Tested on Ubuntu 26.04 with Nautilus 50.
 
@@ -37,15 +43,47 @@ cd nautilus-file-converter
 ./install.sh
 ```
 
-`install.sh` installs whatever is missing from `python3-nautilus`, `ffmpeg`,
-`imagemagick`, `libreoffice`, `poppler-utils` and `libnotify-bin` (this asks for
-your password), copies the extension into `~/.local/share`, and restarts Files.
+Missing packages are installed with `apt`, which asks for your password.
 
-To remove it, run `./uninstall.sh`.
+### Windows 10 and 11
+
+In PowerShell:
+
+```powershell
+git clone https://github.com/ferrew/nautilus-file-converter.git
+cd nautilus-file-converter
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+Missing tools are installed with `winget`. The menu is registered for your user
+only, so no administrator rights are needed for that part.
+
+On Windows 11, **Convert to** is in the classic menu: right-click, then
+**Show more options** (or press Shift+F10). Explorer starts one conversion per
+file and hides the menu when more than 15 files are selected.
+
+### macOS
+
+Needs [Homebrew](https://brew.sh).
+
+```bash
+git clone https://github.com/ferrew/nautilus-file-converter.git
+cd nautilus-file-converter
+./install.sh
+```
+
+Right-click files in Finder and choose **Quick Actions > Convert to…**. A dialog
+asks which format to convert to. If the action doesn't show up, enable it in
+System Settings > General > Login Items & Extensions > Finder.
+
+### Uninstall
+
+Run `./uninstall.sh` (Linux, macOS) or `uninstall.ps1` (Windows). The conversion
+tools stay installed.
 
 ## Command line
 
-The backend works on its own too:
+The converter also works on its own:
 
 ```bash
 python3 converter.py --to webp *.png
@@ -53,13 +91,16 @@ python3 converter.py --to webp *.png
 
 ## How it works
 
-- `file_converter_menu.py` is the Nautilus extension. It builds the menu and
-  starts the backend.
-- `converter.py` holds the format table and does the conversions with ImageMagick,
-  ffmpeg, LibreOffice (headless) and poppler.
+- `converter.py` holds the format table and does the conversions. It is the only
+  part shared by all platforms.
+- `file_converter_menu.py` is the Nautilus extension.
+- `windows_menu.py` writes the Explorer submenu to the registry under
+  `HKEY_CURRENT_USER`.
+- `macos_menu.py` generates the Finder Quick Action in `~/Library/Services`.
 
-Adding a format means adding an entry to `TARGETS` in `converter.py`, plus encoder
-arguments in `VIDEO_ARGS` for audio and video formats.
+To add a format, add it to `TARGETS` in `converter.py`, plus encoder arguments in
+`VIDEO_ARGS` for audio and video. To accept a new source type, add its extension
+to `EXTENSIONS`. Rerun the installer afterwards.
 
 ## License
 
