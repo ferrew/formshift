@@ -11,16 +11,20 @@ import os
 import shutil
 import sys
 
-import converter
+# The embedded Python from install.ps1 doesn't put the script's folder on sys.path.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import converter  # noqa: E402
 
 APP_DIR = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Formshift")
 CLASSES = r"Software\Classes\SystemFileAssociations"
 VERB = "Formshift"
 
 
-def menu_entries():
+def menu_entries(only_available=False):
     """(source extension, [(target extension, label), ...]) for every known type."""
     for ext, cat in sorted(converter.EXTENSION_CATEGORY.items()):
+        if only_available and not converter.available(cat):
+            continue
         same = converter.EXTENSION_ALIASES.get(ext, ext)
         yield ext, [(t, label) for t, label in converter.TARGETS[cat] if t != same]
 
@@ -59,9 +63,12 @@ def install():
     pythonw = pythonw_path()
 
     hkcu = winreg.HKEY_CURRENT_USER
-    for ext, targets in menu_entries():
+    registered = 0
+    for ext, _ in menu_entries():
+        delete_tree(winreg, hkcu, f"{CLASSES}\\.{ext}\\shell\\{VERB}")
+    for ext, targets in menu_entries(only_available=True):
         base = f"{CLASSES}\\.{ext}\\shell\\{VERB}"
-        delete_tree(winreg, hkcu, base)
+        registered += 1
         with winreg.CreateKey(hkcu, base) as key:
             winreg.SetValueEx(key, "MUIVerb", 0, winreg.REG_SZ, "Convert to")
             winreg.SetValueEx(key, "SubCommands", 0, winreg.REG_SZ, "")
@@ -74,7 +81,10 @@ def install():
             with winreg.CreateKey(hkcu, f"{item}\\command") as key:
                 winreg.SetValueEx(key, "", 0, winreg.REG_SZ,
                                   command_for(target, backend, pythonw))
-    print(f"Registered \"Convert to\" for {len(converter.EXTENSION_CATEGORY)} file types.")
+    print(f"Registered \"Convert to\" for {registered} file types.")
+    missing = sorted({c for c in converter.CATEGORY_TOOL if not converter.available(c)})
+    if missing:
+        print(f"Skipped (tool not found): {', '.join(missing)}")
 
 
 def uninstall():
@@ -82,8 +92,8 @@ def uninstall():
 
     for ext, _ in menu_entries():
         delete_tree(winreg, winreg.HKEY_CURRENT_USER, f"{CLASSES}\\.{ext}\\shell\\{VERB}")
-    shutil.rmtree(APP_DIR, ignore_errors=True)
-    print("Removed.")
+    # uninstall.ps1 deletes APP_DIR afterwards; the Python running this lives in it.
+    print("Removed the menu.")
 
 
 if __name__ == "__main__":

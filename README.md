@@ -31,7 +31,9 @@ Only formats that fit the selected file are offered:
 
 The conversions are done by [ffmpeg](https://ffmpeg.org), [ImageMagick](https://imagemagick.org),
 [LibreOffice](https://www.libreoffice.org) and [Poppler](https://poppler.freedesktop.org).
-The install scripts add whichever of these are missing.
+The install scripts add whichever of these are missing, entirely from the
+command line: no installer windows, and on Windows and macOS no extra apps in the
+Start menu or Applications folder.
 
 ### Linux (Ubuntu, GNOME Files)
 
@@ -44,6 +46,7 @@ cd formshift
 ```
 
 Missing packages are installed with `apt`, which asks for your password.
+LibreOffice comes in its `nogui` variant, so it adds no app to the menu.
 
 ### Windows 10 and 11
 
@@ -55,10 +58,19 @@ cd formshift
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-Missing tools are installed with `winget`. If winget is missing too, install
-[App Installer](https://apps.microsoft.com/detail/9NBLGGH4NX0P) from the
-Microsoft Store first. The menu is registered for your user
-only, so no administrator rights are needed for that part.
+Nothing is installed system-wide and no administrator rights are needed. The
+script downloads a private copy of Python and the tools and unpacks them into
+`%LOCALAPPDATA%\Formshift`; the menu is registered for your user only. Tools that
+are already on your `PATH` are reused instead of downloaded.
+
+LibreOffice is about 350 MB and only needed for office documents. To skip it:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1 -NoDocuments
+```
+
+The menu only lists file types this machine can convert, so skipped tools simply
+leave those types out.
 
 On Windows 11, **Convert to** is in the classic menu: right-click, then
 **Show more options** (or press Shift+F10). Explorer starts one conversion per
@@ -66,7 +78,9 @@ file and hides the menu when more than 15 files are selected.
 
 ### macOS
 
-Needs [Homebrew](https://brew.sh).
+Needs [Homebrew](https://brew.sh). ffmpeg, ImageMagick and Poppler come from
+Homebrew; LibreOffice is copied into `~/Library/Application Support/Formshift`
+rather than `/Applications`.
 
 ```bash
 git clone https://github.com/ferrew/formshift.git
@@ -80,8 +94,9 @@ System Settings > General > Login Items & Extensions > Finder.
 
 ### Uninstall
 
-Run `./uninstall.sh` (Linux, macOS) or `uninstall.ps1` (Windows). The conversion
-tools stay installed.
+Run `./uninstall.sh` (Linux, macOS) or `uninstall.ps1` (Windows). On Windows
+this deletes everything the installer downloaded. On macOS it removes the private
+LibreOffice copy; Homebrew packages stay. On Linux the `apt` packages stay.
 
 ## Command line
 

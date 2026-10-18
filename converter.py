@@ -111,14 +111,27 @@ OFFICE_FILTERS = {
 
 EXTENSION_ALIASES = {"jpeg": "jpg", "tif": "tiff", "htm": "html", "aiff": "aif"}
 
+# The installers put tools here on Windows and macOS instead of installing
+# them system-wide.
+if WINDOWS:
+    PRIVATE_TOOLS = os.path.expandvars(r"%LOCALAPPDATA%\Formshift\tools")
+else:
+    PRIVATE_TOOLS = os.path.expanduser("~/Library/Application Support/Formshift/tools")
+
 # Where tools live when they are not on PATH, which is common for programs
 # started from Finder or Explorer.
 EXTRA_TOOL_DIRS = {
     "darwin": [
         "/opt/homebrew/bin", "/usr/local/bin",
+        f"{PRIVATE_TOOLS}/LibreOffice.app/Contents/MacOS",
         "/Applications/LibreOffice.app/Contents/MacOS",
     ],
     "win32": [
+        rf"{PRIVATE_TOOLS}\ffmpeg\bin",
+        rf"{PRIVATE_TOOLS}\imagemagick",
+        rf"{PRIVATE_TOOLS}\poppler\Library\bin",
+        rf"{PRIVATE_TOOLS}\libreoffice\program",
+        rf"{PRIVATE_TOOLS}\libreoffice\*\program",
         os.path.expandvars(r"%ProgramFiles%\LibreOffice\program"),
         os.path.expandvars(r"%ProgramFiles%\ImageMagick-*"),
         os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Links"),
@@ -189,6 +202,22 @@ def tool(name):
     if not found:
         raise ConversionError(f"{name} is not installed")
     return found
+
+
+# The tool each category needs; used to only offer what this machine can do.
+CATEGORY_TOOL = {
+    "image": "magick", "video": "ffmpeg", "audio": "ffmpeg",
+    "document": "soffice", "spreadsheet": "soffice", "presentation": "soffice",
+    "pdf": "pdftoppm",
+}
+
+
+def available(cat):
+    try:
+        tool(CATEGORY_TOOL[cat])
+        return True
+    except ConversionError:
+        return False
 
 
 def free_path(directory, stem, ext):
