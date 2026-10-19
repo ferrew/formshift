@@ -58,8 +58,11 @@ def install():
 
     os.makedirs(APP_DIR, exist_ok=True)
     backend = os.path.join(APP_DIR, "converter.py")
+    icon = os.path.join(APP_DIR, "formshift.ico")
     shutil.copy2(os.path.join(os.path.dirname(os.path.abspath(__file__)), "converter.py"),
                  backend)
+    shutil.copy2(os.path.join(os.path.dirname(os.path.abspath(__file__)), "formshift.ico"),
+                 icon)
     pythonw = pythonw_path()
 
     hkcu = winreg.HKEY_CURRENT_USER
@@ -72,7 +75,7 @@ def install():
         with winreg.CreateKey(hkcu, base) as key:
             winreg.SetValueEx(key, "MUIVerb", 0, winreg.REG_SZ, "Convert to")
             winreg.SetValueEx(key, "SubCommands", 0, winreg.REG_SZ, "")
-            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, "imageres.dll,-5302")
+            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, icon)
         # Explorer sorts submenu entries by key name, so prefix with the position.
         for i, (target, label) in enumerate(targets):
             item = f"{base}\\shell\\{i:02d}{target}"
